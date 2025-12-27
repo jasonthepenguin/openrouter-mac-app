@@ -17,6 +17,11 @@ class OpenRouterService {
         set { UserDefaults.standard.set(newValue, forKey: "openrouter_api_key") }
     }
 
+    var systemPrompt: String {
+        get { UserDefaults.standard.string(forKey: "system_prompt") ?? "Don't use lists or em dashes." }
+        set { UserDefaults.standard.set(newValue, forKey: "system_prompt") }
+    }
+
     func cancelCurrentRequest() {
         currentTask?.cancel()
         currentTask = nil
@@ -75,7 +80,10 @@ class OpenRouterService {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        let apiMessages = messages.map { ["role": $0.role.rawValue, "content": $0.content] }
+        var apiMessages = messages.map { ["role": $0.role.rawValue, "content": $0.content] }
+        if !systemPrompt.isEmpty {
+            apiMessages.insert(["role": "system", "content": systemPrompt], at: 0)
+        }
 
         let reasoning: ChatRequest.ReasoningConfig? = reasoningEffort != .none
             ? ChatRequest.ReasoningConfig(effort: reasoningEffort.rawValue)

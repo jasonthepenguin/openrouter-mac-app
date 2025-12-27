@@ -16,6 +16,7 @@ struct ContentView: View {
     @State private var reasoningEffort: ReasoningEffort = .medium
     @State private var showSettings = false
     @State private var apiKeyInput = ""
+    @State private var systemPromptInput = ""
 
     var body: some View {
         VStack(spacing: 0) {
@@ -108,13 +109,15 @@ struct ContentView: View {
         }
         .frame(minWidth: 500, minHeight: 400)
         .sheet(isPresented: $showSettings) {
-            SettingsView(apiKey: $apiKeyInput, onSave: {
+            SettingsView(apiKey: $apiKeyInput, systemPrompt: $systemPromptInput, onSave: {
                 service.apiKey = apiKeyInput
+                service.systemPrompt = systemPromptInput
                 showSettings = false
             })
         }
         .onAppear {
             apiKeyInput = service.apiKey
+            systemPromptInput = service.systemPrompt
         }
     }
 
@@ -207,6 +210,7 @@ struct MessageView: View {
 
 struct SettingsView: View {
     @Binding var apiKey: String
+    @Binding var systemPrompt: String
     let onSave: () -> Void
     @Environment(\.dismiss) private var dismiss
 
@@ -225,6 +229,15 @@ struct SettingsView: View {
                     .foregroundColor(.secondary)
             }
 
+            VStack(alignment: .leading, spacing: 8) {
+                Text("System Prompt")
+                    .font(.subheadline)
+                TextEditor(text: $systemPrompt)
+                    .font(.body)
+                    .frame(height: 80)
+                    .border(Color.secondary.opacity(0.3), width: 1)
+            }
+
             HStack {
                 Button("Cancel") { dismiss() }
                     .keyboardShortcut(.escape)
@@ -233,7 +246,7 @@ struct SettingsView: View {
             }
         }
         .padding()
-        .frame(width: 350)
+        .frame(width: 400)
     }
 }
 
