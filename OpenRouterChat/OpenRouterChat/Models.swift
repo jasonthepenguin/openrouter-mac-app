@@ -6,16 +6,47 @@
 //
 
 import Foundation
+import AppKit
+
+struct ImageAttachment: Identifiable, Equatable {
+    let id = UUID()
+    let data: Data
+    let mimeType: String
+
+    var base64URL: String {
+        "data:\(mimeType);base64,\(data.base64EncodedString())"
+    }
+
+    var nsImage: NSImage? {
+        NSImage(data: data)
+    }
+
+    static func == (lhs: ImageAttachment, rhs: ImageAttachment) -> Bool {
+        lhs.id == rhs.id
+    }
+}
 
 struct Message: Identifiable, Equatable {
     let id = UUID()
     let role: Role
     let content: String
     var reasoning: String?
+    var images: [ImageAttachment]
+
+    init(role: Role, content: String, reasoning: String? = nil, images: [ImageAttachment] = []) {
+        self.role = role
+        self.content = content
+        self.reasoning = reasoning
+        self.images = images
+    }
 
     enum Role: String {
         case user
         case assistant
+    }
+
+    static func == (lhs: Message, rhs: Message) -> Bool {
+        lhs.id == rhs.id && lhs.content == rhs.content && lhs.reasoning == rhs.reasoning
     }
 }
 

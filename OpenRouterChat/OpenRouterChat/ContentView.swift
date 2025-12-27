@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var apiKeyInput = ""
     @State private var systemPromptInput = ""
+    @State private var pendingImages: [ImageAttachment] = []
     @FocusState private var isInputFocused: Bool
 
     var body: some View {
@@ -93,19 +94,47 @@ struct ContentView: View {
 
             Divider()
 
+            // Pending images preview
+            if !pendingImages.isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(pendingImages) { image in
+                            ZStack(alignment: .topTrailing) {
+                                if let nsImage = image.nsImage {
+                                    Image(nsImage: nsImage)
+                                        .resizable()
+                                        .aspectRatio(contentMode: .fill)
+                                        .frame(width: 60, height: 60)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                                }
+
+                                Button(action: { removeImage(image) }) {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundColor(.white)
+                                        .background(Circle().fill(Color.black.opacity(0.5)))
+                                }
+                                .buttonStyle(.borderless)
+                                .offset(x: 4, y: -4)
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+                }
+                .background(Color(NSColor.controlBackgroundColor))
+            }
+
             // Input
             HStack {
-                TextField("Type a message...", text: $inputText)
-                    .textFieldStyle(.plain)
+                PastableTextField(text: $inputText, onImagePaste: handleImagePaste, onSubmit: sendMessage)
                     .focused($isInputFocused)
-                    .onSubmit { sendMessage() }
 
                 Button(action: sendMessage) {
                     Image(systemName: "arrow.up.circle.fill")
                         .font(.title2)
                 }
                 .buttonStyle(.borderless)
-                .disabled(inputText.isEmpty || isLoading)
+                .disabled((inputText.isEmpty && pendingImages.isEmpty) || isLoading)
             }
             .padding()
         }
@@ -132,11 +161,12 @@ struct ContentView: View {
 
     private func sendMessage() {
         let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else { return }
+        guard !text.isEmpty || !pendingImages.isEmpty else { return }
 
-        let userMessage = Message(role: .user, content: text)
+        let userMessage = Message(role: .user, content: text, images: pendingImages)
         messages.append(userMessage)
         inputText = ""
+        pendingImages = []
         isLoading = true
         errorMessage = nil
 
@@ -175,8 +205,17 @@ struct ContentView: View {
         service.cancelCurrentRequest()
         messages = []
         inputText = ""
+        pendingImages = []
         isLoading = false
         errorMessage = nil
+    }
+
+    private func handleImagePaste(_ images: [ImageAttachment]) {
+        pendingImages.append(contentsOf: images)
+    }
+
+    private func removeImage(_ image: ImageAttachment) {
+        pendingImages.removeAll { $0.id == image.id }
     }
 }
 
@@ -207,11 +246,28 @@ struct MessageView: View {
                 }
             }
 
-            Text(message.content)
-                .padding(10)
-                .background(message.role == .user ? Color.blue : Color(NSColor.controlBackgroundColor))
-                .foregroundColor(message.role == .user ? .white : .primary)
-                .cornerRadius(12)
+            // Display images if present
+            if !message.images.isEmpty {
+                HStack(spacing: 8) {
+                    ForEach(message.images) { image in
+                        if let nsImage = image.nsImage {
+                            Image(nsImage: nsImage)
+                                .resizable()
+                                .aspectRatio(contentMode: .fit)
+                                .frame(maxWidth: 200, maxHeight: 200)
+                                .clipShape(RoundedRectangle(cornerRadius: 8))
+                        }
+                    }
+                }
+            }
+
+            if !message.content.isEmpty {
+                Text(message.content)
+                    .padding(10)
+                    .background(message.role == .user ? Color.blue : Color(NSColor.controlBackgroundColor))
+                    .foregroundColor(message.role == .user ? .white : .primary)
+                    .cornerRadius(12)
+            }
         }
         .frame(maxWidth: .infinity, alignment: message.role == .user ? .trailing : .leading)
     }
@@ -256,6 +312,124 @@ struct SettingsView: View {
         }
         .padding()
         .frame(width: 400)
+    }
+}
+
+struct PastableTextField: NSViewRepresentable {
+    @Binding var text: String
+    var onImagePaste: ([ImageAttachment]) -> Void
+    var onSubmit: () -> Void
+
+    func makeNSView(context: Context) -> NSTextField {
+        let textField = PastableNSTextField()
+        textField.delegate = context.coordinator
+        textField.onImagePaste = onImagePaste
+        textField.placeholderString = "Type a message..."
+        textField.isBordered = false
+        textField.backgroundColor = .clear
+        textField.focusRingType = .none
+        return textField
+    }
+
+    func updateNSView(_ nsView: NSTextField, context: Context) {
+        if nsView.stringValue != text {
+            nsView.stringValue = text
+        }
+    }
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    class Coordinator: NSObject, NSTextFieldDelegate {
+        var parent: PastableTextField
+
+        init(_ parent: PastableTextField) {
+            self.parent = parent
+        }
+
+        func controlTextDidChange(_ obj: Notification) {
+            if let textField = obj.object as? NSTextField {
+                parent.text = textField.stringValue
+            }
+        }
+
+        func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+            if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+                parent.onSubmit()
+                return true
+            }
+            return false
+        }
+    }
+}
+
+class PastableNSTextField: NSTextField {
+    var onImagePaste: (([ImageAttachment]) -> Void)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.modifierFlags.contains(.command) && event.charactersIgnoringModifiers == "v" {
+            if handlePaste() {
+                return true
+            }
+        }
+        return super.performKeyEquivalent(with: event)
+    }
+
+    private func handlePaste() -> Bool {
+        let pasteboard = NSPasteboard.general
+
+        // Check for images first
+        var images: [ImageAttachment] = []
+
+        // Handle image files
+        if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] {
+            for url in urls {
+                if let data = try? Data(contentsOf: url),
+                   let image = NSImage(data: data) {
+                    let mimeType = mimeTypeForURL(url)
+                    if let tiffData = image.tiffRepresentation,
+                       let bitmap = NSBitmapImageRep(data: tiffData),
+                       let pngData = bitmap.representation(using: .png, properties: [:]) {
+                        images.append(ImageAttachment(data: pngData, mimeType: mimeType))
+                    }
+                }
+            }
+        }
+
+        // Handle direct image data (screenshots, copied images)
+        if images.isEmpty {
+            for type in [NSPasteboard.PasteboardType.png, NSPasteboard.PasteboardType.tiff] {
+                if let data = pasteboard.data(forType: type) {
+                    if let image = NSImage(data: data),
+                       let tiffData = image.tiffRepresentation,
+                       let bitmap = NSBitmapImageRep(data: tiffData),
+                       let pngData = bitmap.representation(using: .png, properties: [:]) {
+                        images.append(ImageAttachment(data: pngData, mimeType: "image/png"))
+                        break
+                    }
+                }
+            }
+        }
+
+        if !images.isEmpty {
+            onImagePaste?(images)
+            return true
+        }
+
+        // Fall through to default paste for text
+        return false
+    }
+
+    private func mimeTypeForURL(_ url: URL) -> String {
+        let ext = url.pathExtension.lowercased()
+        switch ext {
+        case "png": return "image/png"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "gif": return "image/gif"
+        case "webp": return "image/webp"
+        default: return "image/png"
+        }
     }
 }
 

@@ -27,16 +27,8 @@ class OpenRouterService {
         currentTask = nil
     }
 
-    struct ChatRequest: Encodable {
-        let model: String
-        let messages: [[String: String]]
-        let max_tokens: Int
-        let stream: Bool
-        let reasoning: ReasoningConfig?
-
-        struct ReasoningConfig: Encodable {
-            let effort: String
-        }
+    struct ReasoningConfig: Encodable {
+        let effort: String
     }
 
     struct ChatResponse: Decodable {
@@ -80,24 +72,55 @@ class OpenRouterService {
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
 
-        var apiMessages = messages.map { ["role": $0.role.rawValue, "content": $0.content] }
+        var apiMessages: [[String: Any]] = []
+
+        // Add system prompt first
         if !systemPrompt.isEmpty {
-            apiMessages.insert(["role": "system", "content": systemPrompt], at: 0)
+            apiMessages.append(["role": "system", "content": systemPrompt])
         }
 
-        let reasoning: ChatRequest.ReasoningConfig? = reasoningEffort != .none
-            ? ChatRequest.ReasoningConfig(effort: reasoningEffort.rawValue)
+        // Build messages with potential image content
+        for message in messages {
+            if message.images.isEmpty {
+                // Simple text message
+                apiMessages.append(["role": message.role.rawValue, "content": message.content])
+            } else {
+                // Multipart message with images
+                var contentParts: [[String: Any]] = []
+
+                // Text first (as recommended by docs)
+                if !message.content.isEmpty {
+                    contentParts.append(["type": "text", "text": message.content])
+                }
+
+                // Then images
+                for image in message.images {
+                    contentParts.append([
+                        "type": "image_url",
+                        "image_url": ["url": image.base64URL]
+                    ])
+                }
+
+                apiMessages.append(["role": message.role.rawValue, "content": contentParts])
+            }
+        }
+
+        let reasoning: ReasoningConfig? = reasoningEffort != .none
+            ? ReasoningConfig(effort: reasoningEffort.rawValue)
             : nil
 
-        let chatRequest = ChatRequest(
-            model: model,
-            messages: apiMessages,
-            max_tokens: 10000,
-            stream: true,
-            reasoning: reasoning
-        )
+        var requestBody: [String: Any] = [
+            "model": model,
+            "messages": apiMessages,
+            "max_tokens": 10000,
+            "stream": true
+        ]
 
-        request.httpBody = try JSONEncoder().encode(chatRequest)
+        if let reasoning = reasoning {
+            requestBody["reasoning"] = ["effort": reasoning.effort]
+        }
+
+        request.httpBody = try JSONSerialization.data(withJSONObject: requestBody)
 
         let (stream, response) = try await URLSession.shared.bytes(for: request)
 
