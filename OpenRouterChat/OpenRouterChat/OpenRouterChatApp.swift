@@ -9,9 +9,23 @@ import SwiftUI
 
 @main
 struct OpenRouterChatApp: App {
+    @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
+
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        Settings {
+            EmptyView()
+        }
+    }
+
+    init() {
+        NotificationCenter.default.addObserver(
+            forName: .toggleWindow,
+            object: nil,
+            queue: .main
+        ) { _ in
+            if let appDelegate = NSApp.delegate as? AppDelegate {
+                appDelegate.toggleWindow()
+            }
         }
     }
 }

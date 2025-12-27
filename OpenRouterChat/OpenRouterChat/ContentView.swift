@@ -17,6 +17,7 @@ struct ContentView: View {
     @State private var showSettings = false
     @State private var apiKeyInput = ""
     @State private var systemPromptInput = ""
+    @FocusState private var isInputFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
@@ -96,6 +97,7 @@ struct ContentView: View {
             HStack {
                 TextField("Type a message...", text: $inputText)
                     .textFieldStyle(.plain)
+                    .focused($isInputFocused)
                     .onSubmit { sendMessage() }
 
                 Button(action: sendMessage) {
@@ -118,6 +120,13 @@ struct ContentView: View {
         .onAppear {
             apiKeyInput = service.apiKey
             systemPromptInput = service.systemPrompt
+            isInputFocused = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .focusTextField)) { _ in
+            isInputFocused = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .newChat)) { _ in
+            newChat()
         }
     }
 
