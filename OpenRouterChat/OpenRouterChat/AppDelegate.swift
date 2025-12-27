@@ -75,10 +75,23 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             setupWindow()
         }
 
+        positionWindowBottomCenter()
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
 
         NotificationCenter.default.post(name: .focusTextField, object: nil)
+    }
+
+    private func positionWindowBottomCenter() {
+        guard let window = window, let screen = NSScreen.main else { return }
+
+        let screenFrame = screen.visibleFrame
+        let windowSize = window.frame.size
+
+        let x = screenFrame.origin.x + (screenFrame.width - windowSize.width) / 2
+        let y = screenFrame.origin.y + 50 // 50pt from bottom
+
+        window.setFrameOrigin(NSPoint(x: x, y: y))
     }
 
     func toggleWindow() {
