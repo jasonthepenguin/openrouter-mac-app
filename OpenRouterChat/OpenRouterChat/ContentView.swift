@@ -21,6 +21,12 @@ struct ContentView: View {
         VStack(spacing: 0) {
             // Header
             HStack {
+                Button(action: newChat) {
+                    Image(systemName: "square.and.pencil")
+                }
+                .buttonStyle(.borderless)
+                .help("New Chat")
+
                 Text("Gemini 3 Pro")
                     .font(.headline)
 
@@ -127,31 +133,38 @@ struct ContentView: View {
         messages.append(assistantMessage)
         let assistantIndex = messages.count - 1
 
-        Task {
-            do {
-                try await service.sendMessage(
-                    messages: Array(messages.dropLast()),
-                    reasoningEffort: reasoningEffort
-                ) { content, reasoning in
-                    DispatchQueue.main.async {
-                        messages[assistantIndex] = Message(
-                            role: .assistant,
-                            content: content,
-                            reasoning: reasoning
-                        )
-                    }
-                }
+        service.sendMessageWithTask(
+            messages: Array(messages.dropLast()),
+            reasoningEffort: reasoningEffort,
+            onUpdate: { content, reasoning in
                 DispatchQueue.main.async {
-                    isLoading = false
+                    guard assistantIndex < messages.count else { return }
+                    messages[assistantIndex] = Message(
+                        role: .assistant,
+                        content: content,
+                        reasoning: reasoning
+                    )
                 }
-            } catch {
-                DispatchQueue.main.async {
+            },
+            onComplete: {
+                isLoading = false
+            },
+            onError: { error in
+                if assistantIndex < messages.count {
                     messages.removeLast()
-                    errorMessage = error.localizedDescription
-                    isLoading = false
                 }
+                errorMessage = error.localizedDescription
+                isLoading = false
             }
-        }
+        )
+    }
+
+    private func newChat() {
+        service.cancelCurrentRequest()
+        messages = []
+        inputText = ""
+        isLoading = false
+        errorMessage = nil
     }
 }
 

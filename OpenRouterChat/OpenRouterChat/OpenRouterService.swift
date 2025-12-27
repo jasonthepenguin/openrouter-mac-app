@@ -10,10 +10,16 @@ import Foundation
 class OpenRouterService {
     private let baseURL = "https://openrouter.ai/api/v1/chat/completions"
     private let model = "google/gemini-3-pro-preview"
+    private var currentTask: Task<Void, Never>?
 
     var apiKey: String {
         get { UserDefaults.standard.string(forKey: "openrouter_api_key") ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: "openrouter_api_key") }
+    }
+
+    func cancelCurrentRequest() {
+        currentTask?.cancel()
+        currentTask = nil
     }
 
     struct ChatRequest: Encodable {
@@ -103,6 +109,8 @@ class OpenRouterService {
         var fullReasoning: String? = nil
 
         for try await line in stream.lines {
+            try Task.checkCancellation()
+
             guard line.hasPrefix("data: ") else { continue }
             let jsonString = String(line.dropFirst(6))
 
@@ -125,6 +133,30 @@ class OpenRouterService {
             }
 
             onUpdate(fullContent, fullReasoning)
+        }
+    }
+
+    func sendMessageWithTask(
+        messages: [Message],
+        reasoningEffort: ReasoningEffort,
+        onUpdate: @escaping (String, String?) -> Void,
+        onComplete: @escaping () -> Void,
+        onError: @escaping (Error) -> Void
+    ) {
+        currentTask?.cancel()
+        currentTask = Task {
+            do {
+                try await sendMessage(
+                    messages: messages,
+                    reasoningEffort: reasoningEffort,
+                    onUpdate: onUpdate
+                )
+                await MainActor.run { onComplete() }
+            } catch is CancellationError {
+                // Silently handle cancellation
+            } catch {
+                await MainActor.run { onError(error) }
+            }
         }
     }
 }
