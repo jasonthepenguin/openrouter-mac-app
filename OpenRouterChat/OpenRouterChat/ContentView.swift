@@ -240,6 +240,7 @@ struct MessageView: View {
                     Text(reasoning)
                         .font(.caption)
                         .foregroundColor(.secondary)
+                        .textSelection(.enabled)
                         .padding(8)
                         .background(Color.purple.opacity(0.1))
                         .cornerRadius(8)
@@ -263,6 +264,7 @@ struct MessageView: View {
 
             if !message.content.isEmpty {
                 Text(message.content)
+                    .textSelection(.enabled)
                     .padding(10)
                     .background(message.role == .user ? Color.blue : Color(NSColor.controlBackgroundColor))
                     .foregroundColor(message.role == .user ? .white : .primary)
